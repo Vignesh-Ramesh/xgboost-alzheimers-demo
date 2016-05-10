@@ -1,0 +1,177 @@
+---
+title: "eXtreme Gradient Boosting for Alzheimer's Disease CSF Biomarker Discovery"
+author: "Justin Taylor"
+date: "May 10, 2016"
+output: 
+  html_document:
+    code_folding: hide
+    toc: true
+    toc_float: true
+    theme: "simplex"
+    highlight: "textmate"
+    
+---
+
+Load the `AlzheimerDisease` data set from the AppliedPredictiveModeling package.  
+
+```{r Dependencies, include = FALSE}
+library(AppliedPredictiveModeling)
+library(xgboost)
+library(DT)
+library(magrittr)
+library(dplyr)
+library(caret)
+```
+
+# Data {.tabset}  
+
+```{r}
+data(AlzheimerDisease)
+```  
+
+## Inspection  
+
+Dimensions: `r dim(predictors)`  
+
+Number of rows = Number of labels: `r nrow(predictors) == length(diagnosis)`   
+
+Variable names:  
+```{r}
+colnames(predictors)
+```
+
+Variable types:  
+
+```{r}
+sapply(predictors, class) %>% table
+```
+
+Head of selected variables:  
+
+```{r}
+head(predictors[,1:5])
+```
+
+```{r cleanData}
+ad_matrix <- as.matrix(sapply(predictors, as.numeric))
+```
+
+The `label` parameter for `xgboost` should be $0$ or $1$ for binary classification.  
+
+```{r fixBinaryLabels}
+diagnosis <- parallel::mclapply(diagnosis, function(x) (
+  if (x == "Control") (0) else 1
+)) %>% unlist; head(diagnosis)
+```
+
+## Preview  
+
+```{r previewData}
+DT::datatable(apply(ad_matrix, 2, round, 3), extensions = c('Buttons', 'Responsive'),
+              options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+```
+
+## Splitting
+Simple splitting with 60/40 train/test spread.  
+
+```{r}
+set.seed(1983)
+train_index <- createDataPartition(diagnosis, p = .6, list = FALSE, times = 1)
+```
+
+----------------------------------------------------------------------------  
+
+
+# Train Model  
+
+```{r}
+model_params <- list(objective = "binary:logistic", eta = 0.01, max.depth = 3, eval_metric = "auc")
+```
+
+```{r trainModel}
+model <- xgboost::xgboost(data = ad_matrix[train_index,], label = diagnosis[train_index], 
+                          max.depth = 6, eta = 1, nthread = 2, nround = 8, 
+                          objective = "binary:logistic")
+
+#model_cv <- xgb.cv(params = xgb_params, data = ad_matrix, nrounds = 100, nfold = 5, label = diagnosis)
+# plot(model_cv$train.auc.mean)
+
+```
+
+----------------------------------------------------------------------------  
+
+
+# Feature Importance {.tabset}
+
+## Table  
+
+```{r getFeatureImportance}
+importance <- xgb.importance(colnames(predictors), model = model); 
+DT::datatable(importance)
+```
+
+## Plot  
+
+```{r plotFeatureImportance, width = 10, height = 8}
+#install.packages('Ckmeans.1d.dp')
+library(Ckmeans.1d.dp)
+xgb.plot.importance(importance)
+```
+
+----------------------------------------------------------------------------  
+
+
+# Testing Model {.tabset}
+
+## Predictions
+
+```{r}
+predictions <- predict(model, ad_matrix[-train_index,])
+predictions <- as.numeric(predictions > 0.5)
+table(predictions)
+table(diagnosis[-train_index])
+```
+
+## Confusion Matrix  
+
+```{r}
+confusionMatrix(predictions, diagnosis[-train_index])
+```
+
+```{r}
+error <- mean(predictions != diagnosis[-train_index])
+```
+
+Test Error: `r error`
+
+---------------------------------------------------------------------------- 
+
+# References
+
+Craig-Schapiro, R., Kuhn, M., Xiong, C., Pickering, E. H., Liu, J., Misko, T. P., … Holtzman, D. M. (2011). Multiplexed Immunoassay Panel Identifies Novel CSF Biomarkers for Alzheimer’s Disease Diagnosis and Prognosis. PLoS ONE, 6(4), e18850. http://doi.org/10.1371/journal.pone.0018850  
+
+Tianqi Chen, Tong He and Michael Benesty (2016). xgboost: Extreme Gradient Boosting. R
+  package version 0.4-3. https://CRAN.R-project.org/package=xgboost
+  
+Max Kuhn. Contributions from Jed Wing, Steve Weston, Andre Williams, Chris Keefer, Allan
+  Engelhardt, Tony Cooper, Zachary Mayer, Brenton Kenkel, the R Core Team, Michael Benesty,
+  Reynald Lescarbeau, Andrew Ziem, Luca Scrucca, Yuan Tang and Can Candan. (2016). caret:
+  Classification and Regression Training. R package version 6.0-68.
+  https://CRAN.R-project.org/package=caret
+  
+Max Kuhn and Kjell Johnson (2014). AppliedPredictiveModeling: Functions and Data Sets for
+  'Applied Predictive Modeling'. R package version 1.1-6.
+  https://CRAN.R-project.org/package=AppliedPredictiveModeling
+  
+
+---------------------------------------------------------------------------- 
+
+
+
+# Session Info
+
+```{r}
+sessionInfo()
+```
+
+
