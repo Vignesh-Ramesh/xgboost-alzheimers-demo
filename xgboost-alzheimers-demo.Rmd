@@ -12,18 +12,21 @@ output:
     
 ---
 
-Load the `AlzheimerDisease` data set from the AppliedPredictiveModeling package.  
+We use gradient-boosted trees to predict Alzheimer's disease state given a set of 127 predictors. The set of predictors are primarily comprised of cerebrospinal fluid concentrations and include sex, as well as genotype for the * gene. 
 
 ```{r Dependencies, include = FALSE}
 library(AppliedPredictiveModeling)
 library(xgboost)
 library(DT)
 library(magrittr)
+library(plyr)
 library(dplyr)
 library(caret)
 ```
 
 # Data {.tabset}  
+
+Load the `AlzheimerDisease` data set from the AppliedPredictiveModeling package.  
 
 ```{r}
 data(AlzheimerDisease)
@@ -35,9 +38,10 @@ Dimensions: `r dim(predictors)`
 
 Number of rows = Number of labels: `r nrow(predictors) == length(diagnosis)`   
 
-Variable names:  
+Some variable names:   
+
 ```{r}
-colnames(predictors)
+colnames(head(predictors))
 ```
 
 Variable types:  
@@ -56,6 +60,11 @@ head(predictors[,1:5])
 ad_matrix <- as.matrix(sapply(predictors, as.numeric))
 ```
 
+```{r}
+heatmap(cor(ad_matrix))
+```
+
+
 The `label` parameter for `xgboost` should be $0$ or $1$ for binary classification.  
 
 ```{r fixBinaryLabels}
@@ -67,8 +76,7 @@ diagnosis <- parallel::mclapply(diagnosis, function(x) (
 ## Preview  
 
 ```{r previewData}
-DT::datatable(apply(ad_matrix, 2, round, 3), extensions = c('Buttons', 'Responsive'),
-              options = list(dom = 'Bfrtip', buttons = c('copy', 'csv', 'excel', 'pdf', 'print')))
+DT::datatable(apply(ad_matrix, 2, round, 3), extensions = c('Responsive'))
 ```
 
 ## Splitting
@@ -84,18 +92,41 @@ train_index <- createDataPartition(diagnosis, p = .6, list = FALSE, times = 1)
 
 # Train Model  
 
+Tune gradient-boosted tree model by trying many combinations of hyper parameters with 10-fold cross-validation.  
+
 ```{r}
-model_params <- list(objective = "binary:logistic", eta = 0.01, max.depth = 3, eval_metric = "auc")
+hparams <- expand.grid(nrounds = c(50, seq(100, 900, 100)), eta = c(0.01, 0.001, 0.0001),
+                       max_depth = seq(2, 12, 2),
+                       gamma = 1, min_child_weight = 1, colsample_bytree = 1)
 ```
 
-```{r trainModel}
+```{r}
+train_control <- caret::trainControl(method = "cv",
+                                     number = 10, verboseIter = TRUE, allowParallel = TRUE)
+```
+
+````{r, results = 'hide', cache = TRUE}
+xgb_train <- caret::train(x = ad_matrix[train_index,], 
+                          y = factor(diagnosis[train_index]),
+                          trControl = train_control, tuneGrid = hparams,
+                          method = "xgbTree")
+```
+
+Best tune: 
+
+```{r}
+xgb_train$bestTune
+```  
+
+Best model:  
+
+```{r trainModel, results = 'hide'}
 model <- xgboost::xgboost(data = ad_matrix[train_index,], label = diagnosis[train_index], 
-                          max.depth = 6, eta = 1, nthread = 2, nround = 8, 
+                          max.depth = xgb_train$bestTune$max_depth, 
+                          eta = xgb_train$bestTune$eta, 
+                          nthread = 4, 
+                          nround = xgb_train$bestTune$nrounds, 
                           objective = "binary:logistic")
-
-#model_cv <- xgb.cv(params = xgb_params, data = ad_matrix, nrounds = 100, nfold = 5, label = diagnosis)
-# plot(model_cv$train.auc.mean)
-
 ```
 
 ----------------------------------------------------------------------------  
@@ -125,6 +156,8 @@ xgb.plot.importance(importance)
 
 ## Predictions
 
+Make predictions on test set.  
+
 ```{r}
 predictions <- predict(model, ad_matrix[-train_index,])
 predictions <- as.numeric(predictions > 0.5)
@@ -148,12 +181,12 @@ Test Error: `r error`
 
 # References
 
-Craig-Schapiro, R., Kuhn, M., Xiong, C., Pickering, E. H., Liu, J., Misko, T. P., … Holtzman, D. M. (2011). Multiplexed Immunoassay Panel Identifies Novel CSF Biomarkers for Alzheimer’s Disease Diagnosis and Prognosis. PLoS ONE, 6(4), e18850. http://doi.org/10.1371/journal.pone.0018850  
+[1] Craig-Schapiro, R., Kuhn, M., Xiong, C., Pickering, E. H., Liu, J., Misko, T. P., … Holtzman, D. M. (2011). Multiplexed Immunoassay Panel Identifies Novel CSF Biomarkers for Alzheimer’s Disease Diagnosis and Prognosis. PLoS ONE, 6(4), e18850. http://doi.org/10.1371/journal.pone.0018850  
 
-Tianqi Chen, Tong He and Michael Benesty (2016). xgboost: Extreme Gradient Boosting. R
+[2] Tianqi Chen, Tong He and Michael Benesty (2016). xgboost: Extreme Gradient Boosting. R
   package version 0.4-3. https://CRAN.R-project.org/package=xgboost
   
-Max Kuhn. Contributions from Jed Wing, Steve Weston, Andre Williams, Chris Keefer, Allan
+[3] Max Kuhn. Contributions from Jed Wing, Steve Weston, Andre Williams, Chris Keefer, Allan
   Engelhardt, Tony Cooper, Zachary Mayer, Brenton Kenkel, the R Core Team, Michael Benesty,
   Reynald Lescarbeau, Andrew Ziem, Luca Scrucca, Yuan Tang and Can Candan. (2016). caret:
   Classification and Regression Training. R package version 6.0-68.
