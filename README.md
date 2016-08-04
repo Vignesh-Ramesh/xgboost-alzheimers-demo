@@ -1,7 +1,6 @@
-# eXtreme Gradient Boosting for Alzheimer’s Disease CSF Biomarker Discovery
-Justin Taylor 
+# Gradient Boosted Trees for Alzheimer’s Disease CSF Biomarker Discovery
 
-We use predictors from a Washington University study to predict Alzheimer's disease status with a gradient-boosted tree model. The data can be found in the AppliedPredictiveModeling package. The caret and xgboost packages were used to train a model and make predictions.  
+We use predictors from a Washington University study to predict Alzheimer's disease status with a gradient-boosted tree model. The data can be found in the AppliedPredictiveModeling package. The caret and xgboost packages were employed to train a model and make predictions.  
 
 
 To view the compiled report, clone this repository. 
